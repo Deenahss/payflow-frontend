@@ -281,19 +281,41 @@ export function Empty({
 export function NetworkMismatchBanner({
   walletNetwork,
   expectedNetwork,
+  expectedNetworkLabel,
+  status,
 }: {
   walletNetwork: string | null;
   expectedNetwork: string;
+  expectedNetworkLabel: string;
+  status: "unknown" | "mismatch";
 }) {
   const { t: tr } = useI18n();
-  if (!walletNetwork) return null;
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-warn">
+    <div
+      role="alert"
+      className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-warn"
+    >
       <div className="flex items-center gap-2">
         <span aria-hidden="true">⚠</span>
-        <span>
-          <strong>{tr("Network mismatch detected.")}</strong>{" "}{tr("Your wallet is connected to a different network than this app. Switch to")}{" "}
-          <span className="font-mono text-xs">{expectedNetwork}</span>{" "}{tr("to interact with contracts. Contract write operations are disabled while mismatched.")}</span>
+        {status === "unknown" ? (
+          <span>
+            <strong>{tr("Wallet network could not be verified.")}</strong>{" "}
+            {tr("Check that your wallet is connected to")}{" "}
+            <strong>{tr(expectedNetworkLabel)}</strong>{" "}
+            <span className="font-mono text-xs">({expectedNetwork})</span>{" "}
+            {tr("before signing. Signing is disabled until the network can be verified.")}
+          </span>
+        ) : (
+          <span>
+            <strong>{tr("Network mismatch detected.")}</strong>{" "}
+            {tr("Wallet network:")}{" "}
+            <span className="font-mono text-xs">{walletNetwork}</span>.{" "}
+            {tr("This app expects")}{" "}
+            <strong>{tr(expectedNetworkLabel)}</strong>{" "}
+            <span className="font-mono text-xs">({expectedNetwork})</span>.{" "}
+            {tr("Contract write operations are disabled while mismatched.")}
+          </span>
+        )}
       </div>
     </div>
   );
