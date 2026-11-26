@@ -38,7 +38,12 @@ export function parseStoredSession(raw: string | null): StoredSession | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Partial<StoredSession>;
-    if (typeof parsed?.walletId === "string" && typeof parsed?.address === "string") {
+    if (
+      typeof parsed?.walletId === "string" &&
+      parsed.walletId.trim() &&
+      typeof parsed.address === "string" &&
+      parsed.address.trim()
+    ) {
       return { walletId: parsed.walletId, address: parsed.address };
     }
     return null;
@@ -84,11 +89,25 @@ function getWalletStorage(): Storage | null {
   }
 }
 
-function saveWalletSession(walletId: string, address: string): void {
+function saveWalletSession(walletId: string, address: string): boolean {
   try {
-    getWalletStorage()?.setItem(STORAGE_KEY, serializeSession(walletId, address));
+    const storage = getWalletStorage();
+    if (!storage) return false;
+    storage.setItem(STORAGE_KEY, serializeSession(walletId, address));
+    return true;
   } catch {
-    // A blocked storage only means this wallet cannot be remembered.
+    return false;
+  }
+}
+
+function clearWalletSession(): boolean {
+  try {
+    const storage = getWalletStorage();
+    if (!storage) return false;
+    storage.removeItem(STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -277,11 +296,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     try {
       const kit = await getKit();
       const currentAddress = addressRef.current;
-      if (!currentAddress) return;
       const currentWalletId = walletIdRef.current;
       try {
         const { address: detected } = await kit.getAddress({ skipRequestAccess: true });
-        if (mountedRef.current && shouldUpdateAddress(currentAddress, detected)) {
+        if (
+          mountedRef.current &&
+          addressRef.current === currentAddress &&
+          walletIdRef.current === currentWalletId &&
+          shouldUpdateAddress(currentAddress, detected)
+        ) {
           applyAccountChange(detected);
         }
       } catch {
@@ -289,11 +312,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
       try {
         const { networkPassphrase } = await kit.getNetwork();
-        if (mountedRef.current && walletIdRef.current === currentWalletId && addressRef.current) {
+        if (
+          mountedRef.current &&
+          walletIdRef.current === currentWalletId &&
+          addressRef.current
+        ) {
           setWalletNetwork(networkPassphrase || null);
         }
       } catch {
-        if (mountedRef.current && walletIdRef.current === currentWalletId && addressRef.current) {
+        if (
+          mountedRef.current &&
+          walletIdRef.current === currentWalletId &&
+          addressRef.current
+        ) {
           setWalletNetwork(null);
         }
       }
@@ -304,20 +335,23 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [applyAccountChange]);
 
-  // Restore the wallet choice only. Reconnecting requires an explicit user action.
+  // Restore only the public wallet choice; reconnecting remains user-initiated.
   useEffect(() => {
     try {
       const storage = getWalletStorage();
-      if (!storage) return;
-      const stored = storage.getItem(STORAGE_KEY);
-      if (!stored) return;
-      const session = parseStoredSession(stored);
-      if (!session) {
-        storage.removeItem(STORAGE_KEY);
-        return;
+      const stored = storage?.getItem(STORAGE_KEY) ?? null;
+      if (stored) {
+        const session = parseStoredSession(stored);
+        if (session) {
+          setRememberedWalletId(session.walletId);
+        } else {
+          try {
+            storage?.removeItem(STORAGE_KEY);
+          } catch {
+            // A corrupted preference is ignored when storage cannot be cleared.
+          }
+        }
       }
-      walletIdRef.current = session.walletId;
-      setRememberedWalletId(session.walletId);
     } catch {
       // Storage is optional; the wallet remains usable without persistence.
     } finally {
@@ -356,7 +390,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   ) => {
     kit.setWallet(selectedWalletId);
     const { address: selectedAddress } = await kit.getAddress();
-    if (!selectedAddress) throw new Error("The selected wallet did not return an account address.");
+    if (!selectedAddress) {
+      throw new Error("The selected wallet did not return an account address.");
+    }
 
     addressRef.current = selectedAddress;
     walletIdRef.current = selectedWalletId;
@@ -364,22 +400,34 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setWalletId(selectedWalletId);
     setRememberedWalletId(selectedWalletId);
     setWalletNetwork(null);
-    saveWalletSession(selectedWalletId, selectedAddress);
+
+    if (!saveWalletSession(selectedWalletId, selectedAddress)) {
+      setError("Wallet connected, but this browser could not remember the wallet selection.");
+    }
 
     try {
       const { networkPassphrase } = await kit.getNetwork();
-      setWalletNetwork(networkPassphrase || null);
+      if (
+        mountedRef.current &&
+        walletIdRef.current === selectedWalletId &&
+        addressRef.current === selectedAddress
+      ) {
+        setWalletNetwork(networkPassphrase || null);
+      }
     } catch {
-      setWalletNetwork(null);
+      if (mountedRef.current && walletIdRef.current === selectedWalletId) {
+        setWalletNetwork(null);
+      }
     }
   }, []);
 
   const connect = useCallback(async () => {
-    if (connectionAttemptRef.current) return;
+    if (connectionAttemptRef.current || disconnectAttemptRef.current) return;
     connectionAttemptRef.current = true;
     setConnecting(true);
     setReconnecting(false);
     setError(null);
+    const previousWalletId = walletIdRef.current;
     const finish = () => {
       connectionAttemptRef.current = false;
       setConnecting(false);
@@ -389,7 +437,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const kit = await getKit();
       await kit.openModal({
         onWalletSelected: async (option) => {
-          const previousWalletId = walletIdRef.current;
+          if (!connectionAttemptRef.current) return;
           try {
             await activateWallet(kit, option.id);
           } catch (err) {
@@ -421,7 +469,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const reconnect = useCallback(async () => {
     const selectedWalletId = rememberedWalletId;
-    if (!selectedWalletId || connectionAttemptRef.current) return;
+    if (
+      !selectedWalletId ||
+      connectionAttemptRef.current ||
+      disconnectAttemptRef.current
+    ) {
+      return;
+    }
+
     connectionAttemptRef.current = true;
     setConnecting(true);
     setReconnecting(true);
@@ -430,7 +485,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const kit = await getKit();
       await activateWallet(kit, selectedWalletId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not reconnect to the saved wallet.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not reconnect to the saved wallet.",
+      );
     } finally {
       connectionAttemptRef.current = false;
       setConnecting(false);
@@ -439,18 +498,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [activateWallet, rememberedWalletId]);
 
   const disconnect = useCallback(async () => {
-    if (disconnectAttemptRef.current) return;
+    if (disconnectAttemptRef.current || connectionAttemptRef.current) return;
     disconnectAttemptRef.current = true;
     setDisconnecting(true);
     setError(null);
     try {
       const kit = await getKit();
       await kit.disconnect();
-      try {
-        getWalletStorage()?.removeItem(STORAGE_KEY);
-      } catch {
-        // The current page can disconnect even if storage is unavailable.
-      }
+      const cleared = clearWalletSession();
       walletIdRef.current = null;
       setWalletId(null);
       setRememberedWalletId(null);
@@ -458,8 +513,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setAddress(null);
       setWalletNetwork(null);
       clearMerchantSession();
+      if (!cleared) {
+        setError("Wallet disconnected, but this browser could not clear the saved wallet selection.");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not disconnect the wallet.");
+      setError(
+        err instanceof Error ? err.message : "Could not disconnect the wallet.",
+      );
     } finally {
       disconnectAttemptRef.current = false;
       setDisconnecting(false);
@@ -468,25 +528,38 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const signXdr = useCallback<SignXdr>(
     async (xdrString) => {
-      if (!address) throw new Error("Connect a wallet first.");
+      if (!address || !walletId) throw new Error("Connect a wallet first.");
+      if (
+        addressRef.current !== address ||
+        walletIdRef.current !== walletId ||
+        disconnectAttemptRef.current ||
+        connectionAttemptRef.current
+      ) {
+        throw new Error("Wallet connection changed before signing. Please retry.");
+      }
+      if (networkMismatch) {
+        throw new Error("Switch your wallet to the correct network first.");
+      }
       const kit = await getKit();
 
-      // Verify the live network immediately before signing; a focus event may
-      // not have fired if the wallet changed networks in another window.
-      let finalSigningNetwork: string;
+      let signingNetwork: string;
       try {
         const { networkPassphrase } = await kit.getNetwork();
-        finalSigningNetwork = networkPassphrase;
+        signingNetwork = networkPassphrase;
       } catch {
         setWalletNetwork(null);
-        throw new Error("Could not verify the wallet network. Signing is disabled until it can be checked.");
+        throw new Error(
+          "Could not verify the wallet network. Signing is disabled until it can be checked.",
+        );
       }
-      if (!finalSigningNetwork) {
+      if (!signingNetwork) {
         setWalletNetwork(null);
-        throw new Error("Could not verify the wallet network. Signing is disabled until it can be checked.");
+        throw new Error(
+          "Could not verify the wallet network. Signing is disabled until it can be checked.",
+        );
       }
-      setWalletNetwork(finalSigningNetwork);
-      if (checkNetworkMismatch(finalSigningNetwork)) {
+      setWalletNetwork(signingNetwork);
+      if (checkNetworkMismatch(signingNetwork)) {
         throw new Error("Switch your wallet to the correct network first.");
       }
 
@@ -496,7 +569,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       // on the wrong account.
       let currentAddress: string | null = null;
       try {
-        const res = await kit.getAddress();
+        const res = await kit.getAddress({ skipRequestAccess: true });
         currentAddress = res.address;
       } catch (err) {
         throw new Error(
@@ -510,25 +583,42 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         throw new Error(ACCOUNT_CHANGED_ERROR);
       }
 
-      if (addressRef.current !== address || walletIdRef.current !== walletId) {
+      if (
+        addressRef.current !== address ||
+        walletIdRef.current !== walletId ||
+        disconnectAttemptRef.current ||
+        connectionAttemptRef.current
+      ) {
         throw new Error("Wallet connection changed before signing. Please retry.");
       }
 
-      let signingNetwork: string;
+      let verifiedNetwork: string;
       try {
         const { networkPassphrase } = await kit.getNetwork();
-        signingNetwork = networkPassphrase;
+        verifiedNetwork = networkPassphrase;
       } catch {
         setWalletNetwork(null);
-        throw new Error("Could not verify the wallet network. Signing is disabled until it can be checked.");
+        throw new Error(
+          "Could not verify the wallet network. Signing is disabled until it can be checked.",
+        );
       }
-      if (!signingNetwork) {
+      if (!verifiedNetwork) {
         setWalletNetwork(null);
-        throw new Error("Could not verify the wallet network. Signing is disabled until it can be checked.");
+        throw new Error(
+          "Could not verify the wallet network. Signing is disabled until it can be checked.",
+        );
       }
-      setWalletNetwork(signingNetwork);
-      if (checkNetworkMismatch(signingNetwork)) {
+      setWalletNetwork(verifiedNetwork);
+      if (checkNetworkMismatch(verifiedNetwork)) {
         throw new Error("Switch your wallet to the correct network first.");
+      }
+      if (
+        addressRef.current !== address ||
+        walletIdRef.current !== walletId ||
+        disconnectAttemptRef.current ||
+        connectionAttemptRef.current
+      ) {
+        throw new Error("Wallet connection changed before signing. Please retry.");
       }
 
       try {
@@ -541,7 +631,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         translateSignatureError(err);
       }
     },
-    [address, walletId, applyAccountChange],
+    [address, networkMismatch, walletId, applyAccountChange],
   );
 
   // Bind the SEP-10 merchant-session token provider to the connected account,
@@ -609,11 +699,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       walletNetwork,
       account,
       funding,
-      fund,
       connect,
       reconnect,
       disconnect,
       refreshAccount,
+      fund,
       signXdr,
     ],
   );

@@ -48,9 +48,15 @@ const fixtures = vi.hoisted(() => {
       networkMismatch: false,
       networkStatus: "unknown" as "unknown" | "matching" | "mismatch",
       walletNetwork: null as string | null,
+      walletId: null as string | null,
+      rememberedWalletId: null as string | null,
+      walletSelectionLoaded: true,
       account: { state: "loading" as const },
+      funding: false,
       connect: vi.fn(),
+      reconnect: vi.fn(),
       disconnect: vi.fn(),
+      fund: vi.fn(),
       signXdr: vi.fn(),
     },
   };
@@ -91,7 +97,7 @@ describe("header network control", () => {
     fixtures.active = fixtures.TESTNET;
     fixtures.selectNetwork.mockReset();
     fixtures.wallet.networkMismatch = false;
-    fixtures.wallet.networkStatus = "matching";
+    fixtures.wallet.networkStatus = "unknown";
     fixtures.wallet.walletNetwork = null;
     fixtures.wallet.address = null;
   });
@@ -155,13 +161,34 @@ describe("header network control", () => {
   it("follows the wallet mismatch warning to the selected network", () => {
     fixtures.wallet.networkMismatch = true;
     fixtures.wallet.networkStatus = "mismatch";
-    fixtures.wallet.address = "GAEWDXVDI3WI35TWTZXNQ4NTRYIG6J34XPRSNKX655LBA377M5ZOCBY5";
+    fixtures.wallet.address = "GACCOUNT";
     fixtures.wallet.walletNetwork = "Some Other Network ; December 2020";
     fixtures.active = fixtures.MAINNET;
 
     renderLayout();
 
     expect(screen.getByText(/Network mismatch detected/)).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain(fixtures.MAINNET.networkPassphrase);
+    expect(screen.getByRole("alert").textContent).toContain(
+      fixtures.MAINNET.networkPassphrase,
+    );
+  });
+
+  it("warns and blocks signing when the connected wallet network is unknown", () => {
+    fixtures.wallet.address = "GACCOUNT";
+    fixtures.wallet.networkStatus = "unknown";
+
+    renderLayout();
+
+    expect(screen.getByRole("alert").textContent).toContain("could not be verified");
+    expect(screen.getByRole("alert").textContent).toContain("Signing is disabled");
+  });
+
+  it("renders a persistent testnet and unaudited warning in the shared layout", () => {
+    fixtures.active = fixtures.TESTNET;
+
+    renderLayout();
+
+    expect(screen.getByRole("status").textContent).toContain("Testnet software");
+    expect(screen.getByRole("status").textContent).toContain("unaudited");
   });
 });

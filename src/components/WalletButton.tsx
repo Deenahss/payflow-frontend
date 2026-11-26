@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/i18n/provider";
 
 import { useWallet } from "@/lib/wallet";
@@ -20,7 +20,7 @@ export function WalletButton() {
     reconnecting,
     disconnecting,
     rememberedWalletId,
-    walletSelectionLoaded = true,
+    walletSelectionLoaded,
     connect,
     reconnect,
     disconnect,
@@ -32,8 +32,38 @@ export function WalletButton() {
   const [copying, setCopying] = useState(false);
   const [copyResult, setCopyResult] = useState<{
     address: string;
-    state: "copied" | "error";
+    result: "copied" | "error";
   } | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyFeedback =
+    copyResult?.address === address ? copyResult.result : null;
+
+  useEffect(() => {
+    return () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
+  }, []);
+
+  async function copyAddress() {
+    if (!address || copying) return;
+    const copiedAddress = address;
+    setCopying(true);
+    let result: "copied" | "error";
+    try {
+      result = await copyToClipboard(copiedAddress) ? "copied" : "error";
+    } catch {
+      result = "error";
+    } finally {
+      setCopying(false);
+    }
+    setCopyResult({ address: copiedAddress, result });
+
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(
+      () => setCopyResult(null),
+      result === "error" ? 4_000 : 2_000,
+    );
+  }
 
   if (!walletSelectionLoaded) {
     return (
@@ -61,7 +91,7 @@ export function WalletButton() {
         <button
           type="button"
           onClick={() => void connect()}
-          disabled={connecting}
+          disabled={connecting || disconnecting}
           className={rememberedWalletId ? "btn-ghost" : "btn-primary"}
         >
           {connecting && !reconnecting
@@ -72,50 +102,28 @@ export function WalletButton() {
         </button>
         {error && (
           <span role="alert" className="basis-full text-right text-xs text-danger">
-            {error}
+            {tr(error)}
           </span>
         )}
       </div>
     );
   }
 
-  const connectedAddress = address;
-  const copyFeedback = copyResult?.address === connectedAddress ? copyResult.state : "idle";
-
-  async function copyAddress() {
-    if (copying) return;
-    setCopying(true);
-    try {
-      setCopyResult({
-        address: connectedAddress,
-        state: await copyToClipboard(connectedAddress) ? "copied" : "error",
-      });
-    } catch {
-      setCopyResult({ address: connectedAddress, state: "error" });
-    } finally {
-      setCopying(false);
-    }
-  }
-
   return (
-    <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+    <div
+      className="flex max-w-full flex-wrap items-center justify-end gap-2"
+      aria-busy={disconnecting || connecting || undefined}
+    >
       <BalanceLabel account={account} />
       <span
+        role="group"
         className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-edge px-2.5 py-2 text-muted"
-        title={connectedAddress}
+        title={address}
+        aria-label={tr("Connected account {0}", { "0": address })}
       >
-        <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden="true" />
-        <span className="mono truncate">{shortAddress(connectedAddress, 5)}</span>
+        <span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
+        <span className="mono truncate">{shortAddress(address, 5)}</span>
       </span>
-      <button
-        type="button"
-        onClick={() => void copyAddress()}
-        disabled={copying}
-        className="btn-ghost"
-        aria-label={tr("Copy connected wallet address")}
-      >
-        {copying ? tr("Copying…") : copyFeedback === "copied" ? tr("Copied!") : tr("Copy address")}
-      </button>
       <button
         type="button"
         onClick={() => void connect()}
@@ -126,32 +134,43 @@ export function WalletButton() {
       </button>
       <button
         type="button"
+        onClick={() => void copyAddress()}
+        disabled={copying}
+        className="btn-ghost"
+        aria-label={tr("Copy connected wallet address")}
+      >
+        {copying
+          ? tr("Copying…")
+          : copyFeedback === "copied"
+            ? tr("Copied!")
+            : tr("Copy address")}
+      </button>
+      <button
+        type="button"
         onClick={() => void disconnect()}
         disabled={disconnecting || connecting}
         className="btn-ghost"
       >
         {disconnecting ? tr("Disconnecting…") : tr("Disconnect")}
       </button>
-      <span role="status" aria-live="polite" className="sr-only">
+      <span
+        role="status"
+        aria-live="polite"
+        className={
+          copyFeedback === "error"
+            ? "basis-full text-right text-xs text-danger"
+            : "sr-only"
+        }
+      >
         {copyFeedback === "copied"
           ? tr("Wallet address copied to clipboard")
           : copyFeedback === "error"
             ? tr("Could not copy the wallet address")
             : ""}
       </span>
-      {copyFeedback === "copied" && (
-        <span className="text-xs text-accent" aria-hidden="true">
-          {tr("Copied!")}
-        </span>
-      )}
-      {copyFeedback === "error" && (
-        <span className="text-xs text-danger" role="status">
-          {tr("Could not copy the wallet address")}
-        </span>
-      )}
       {error && (
         <span role="alert" className="basis-full text-right text-xs text-danger">
-          {error}
+          {tr(error)}
         </span>
       )}
       {/* Friendbot is a testnet faucet; off testnet there is nothing to offer. */}

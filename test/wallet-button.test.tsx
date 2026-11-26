@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { WalletButton } from "@/components/WalletButton";
 import { shortAddress } from "@/lib/format";
 
@@ -50,7 +50,7 @@ describe("WalletButton", () => {
 
   afterEach(cleanup);
 
-  it("offers a deliberate reconnect and a way to choose another wallet", () => {
+  it("offers one-tap reconnect and a way to choose another wallet", () => {
     fixtures.wallet.rememberedWalletId = "freighter";
     render(<WalletButton />);
 
@@ -61,7 +61,7 @@ describe("WalletButton", () => {
     expect(fixtures.wallet.connect).toHaveBeenCalledOnce();
   });
 
-  it("announces saved-wallet lookup before offering connection controls", () => {
+  it("shows loading while the saved wallet preference is being checked", () => {
     fixtures.wallet.walletSelectionLoaded = false;
     render(<WalletButton />);
 
@@ -72,17 +72,27 @@ describe("WalletButton", () => {
   it("shows a truncated connected account and copies the full address", async () => {
     fixtures.wallet.address = ADDRESS;
     fixtures.copyToClipboard.mockResolvedValue(true);
-    render(<WalletButton />);
+    const { rerender } = render(<WalletButton />);
 
     expect(screen.getByText(shortAddress(ADDRESS, 5))).toBeTruthy();
-    expect(screen.getByText(shortAddress(ADDRESS, 5)).parentElement?.getAttribute("title")).toBe(ADDRESS);
+    expect(screen.getByRole("group", { name: `Connected account ${ADDRESS}` })).toBeTruthy();
+    expect(screen.getByTitle(ADDRESS)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Copy connected wallet address" }));
 
     await waitFor(() => {
       expect(fixtures.copyToClipboard).toHaveBeenCalledWith(ADDRESS);
       expect(screen.getByRole("status").textContent).toContain("Wallet address copied");
+      expect(screen.getByText("Copied!")).toBeTruthy();
     });
-    expect(screen.getAllByText("Copied!").length).toBeGreaterThan(0);
+
+    fixtures.wallet.address = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+    rerender(<WalletButton />);
+    expect(screen.queryByText("Copied!")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Change wallet" }));
+    expect(fixtures.wallet.connect).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    expect(fixtures.wallet.disconnect).toHaveBeenCalledOnce();
   });
 
   it("shows copy failure feedback and keeps disconnect available", async () => {
@@ -91,10 +101,10 @@ describe("WalletButton", () => {
     render(<WalletButton />);
 
     fireEvent.click(screen.getByRole("button", { name: "Copy connected wallet address" }));
-    await waitFor(() => expect(screen.getAllByText("Could not copy the wallet address").length).toBeGreaterThan(0));
-
-    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
-    expect(fixtures.wallet.disconnect).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(screen.getByText("Could not copy the wallet address")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeTruthy();
   });
 
   it("announces and disables an in-progress reconnect", () => {
@@ -104,5 +114,21 @@ describe("WalletButton", () => {
     render(<WalletButton />);
 
     expect(screen.getByRole("button", { name: "Reconnecting…" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("shows disconnect failures from the shared wallet state", async () => {
+    fixtures.wallet.address = ADDRESS;
+    fixtures.wallet.disconnect.mockImplementation(() => {
+      fixtures.wallet.error = "Disconnect failed";
+    });
+    const { rerender } = render(<WalletButton />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    });
+    rerender(<WalletButton />);
+
+    expect(screen.getByRole("alert").textContent).toContain("Disconnect failed");
+    expect(screen.getByTitle(ADDRESS)).toBeTruthy();
   });
 });

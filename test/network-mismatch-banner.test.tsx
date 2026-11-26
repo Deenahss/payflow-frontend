@@ -16,11 +16,12 @@ describe("NetworkMismatchBanner", () => {
       />,
     );
 
-    expect(screen.getByRole("alert").textContent).toContain("could not be verified");
-    expect(screen.getByRole("alert").textContent).toContain("Testnet");
-    expect(screen.getByRole("alert").textContent).toContain("Test SDF Network ; September 2015");
-    expect(screen.getByRole("alert").textContent).toContain("Signing is disabled");
-    expect(screen.getByRole("alert").textContent).not.toContain("Network mismatch detected");
+    const banner = screen.getByRole("alert");
+    expect(banner.textContent).toContain("could not be verified");
+    expect(banner.textContent).toContain("Testnet");
+    expect(banner.textContent).toContain("Test SDF Network ; September 2015");
+    expect(banner.textContent).toContain("Signing is disabled");
+    expect(banner.textContent).not.toContain("Network mismatch detected");
   });
 
   it("shows both network identifiers for a mismatch with theme-aware warning styles", () => {

@@ -1,5 +1,5 @@
 {
-  "//": "First-load JS budgets in kB (gzip), enforced by scripts/check-js-budget.mjs over out/**/index.html. Re-measured after wallet persistence/account controls, network status and the shared unaudited-software warning: / 247.5, /account 265.1, /m 247.0, /mandates 249.1, /merchant 278.7, /plans/* 246.9, /receipt 250.6, /status 242.9, /subscribe 256.4. The increases cover the shared features introduced by this PR.",
+  "//": "First-load JS budgets in kB (gzip), enforced by scripts/check-js-budget.mjs over out/**/index.html. Re-measured with the shared wallet controls, network status and persistent unaudited-software banner: / 247.6, /account 265.2, /m 247.1, /mandates 249.2, /merchant 278.8, /plans/* 247.0, /receipt 250.7, /status 243.0, /subscribe 256.5. The shared UI adds a small amount to every route; route-specific caps retain headroom for the larger account and merchant screens.",
   "default": 255,
   "routes": {
     "/": 250,

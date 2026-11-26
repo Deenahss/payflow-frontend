@@ -117,7 +117,7 @@ function NetworkSwitcher({
  */
 export function WalletLayoutInner({ children }: { children: React.ReactNode }) {
   const { t: tr } = useI18n();
-  const { networkMismatch, networkStatus, walletNetwork, walletId, address } = useWallet();
+  const { networkStatus, walletNetwork, walletId, address } = useWallet();
   const { network, networks, select } = useNetwork();
   const pathname = usePathname();
   const router = useRouter();
@@ -125,8 +125,6 @@ export function WalletLayoutInner({ children }: { children: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLElement>(null);
-
-  const walletDisplayName = walletId ?? "Unknown";
 
   // "/" focuses the search field from anywhere on the page, unless the user
   // is already typing into an input, textarea, or contenteditable element.
@@ -150,7 +148,7 @@ export function WalletLayoutInner({ children }: { children: React.ReactNode }) {
 
   const handleCopyDebugInfo = async () => {
     const debugInfo = buildDebugInfo(
-      address ? { name: walletDisplayName, address } : null,
+      address ? { name: walletId ?? "Unknown", address } : null,
     );
     const text = formatDebugInfo(debugInfo);
     const ok = await copyToClipboard(text);
@@ -209,7 +207,7 @@ export function WalletLayoutInner({ children }: { children: React.ReactNode }) {
             walletNetwork={walletNetwork}
             expectedNetwork={network.networkPassphrase}
             expectedNetworkLabel={network.label}
-            status={networkMismatch ? "mismatch" : "unknown"}
+            status={networkStatus}
           />
         </div>
       )}
