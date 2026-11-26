@@ -180,7 +180,7 @@ export function NotificationCentre({
 
           {/* Error State */}
           {!loading && error && (
-            <div role="alert" className="my-2">
+            <div className="my-2">
               <Notice tone="error">{error}</Notice>
             </div>
           )}
