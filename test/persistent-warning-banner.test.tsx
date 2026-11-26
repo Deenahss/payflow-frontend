@@ -8,10 +8,7 @@ import {
 
 describe("PersistentWarningBanner", () => {
   beforeEach(() => localStorage.clear());
-  afterEach(() => {
-    cleanup();
-    vi.restoreAllMocks();
-  });
+  afterEach(cleanup);
 
   it("shows the unaudited testnet warning and persists dismissal", async () => {
     const { unmount } = render(<PersistentWarningBanner networkId="testnet" />);
@@ -20,13 +17,7 @@ describe("PersistentWarningBanner", () => {
     expect(banner.textContent).toContain("Testnet software");
     expect(banner.textContent).toContain("unaudited");
     expect(banner.className).toContain("bg-warn/10");
-    expect(screen.getByRole("button", {
-      name: "Dismiss testnet and unaudited software warning",
-    })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", {
-      name: "Dismiss testnet and unaudited software warning",
-    }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss testnet and unaudited software warning" }));
 
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
     expect(localStorage.getItem(warningDismissalKey("testnet"))).toBe("true");
@@ -36,16 +27,15 @@ describe("PersistentWarningBanner", () => {
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   });
 
-  it("uses a separate unaudited warning and dismissal for another network", () => {
+  it("uses a separate unaudited warning and dismissal for another network", async () => {
     localStorage.setItem(warningDismissalKey("testnet"), "true");
     render(<PersistentWarningBanner networkId="mainnet" />);
 
     expect(screen.getByRole("status").textContent).toContain("Unaudited software");
     expect(screen.getByRole("status").textContent).not.toContain("Testnet software");
-    expect(warningDismissalKey("mainnet")).not.toBe(warningDismissalKey("testnet"));
   });
 
-  it("remains visible and can be dismissed for this visit when storage fails", async () => {
+  it("remains visible when storage reads fail and dismisses for the current visit if writes fail", async () => {
     const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("storage unavailable");
     });
@@ -55,9 +45,7 @@ describe("PersistentWarningBanner", () => {
     render(<PersistentWarningBanner networkId="testnet" />);
 
     expect(screen.getByRole("status")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", {
-      name: "Dismiss testnet and unaudited software warning",
-    }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss testnet and unaudited software warning" }));
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
 
     getItem.mockRestore();

@@ -1,13 +1,15 @@
 {
-  "//": "First-load JS budgets in kB (gzip), enforced by scripts/check-js-budget.mjs over out/**/index.html. Re-measured with the shared wallet controls, network status and persistent unaudited-software banner: / 247.6, /account 265.2, /m 247.1, /mandates 249.2, /merchant 278.8, /plans/* 247.0, /receipt 250.7, /status 243.0, /subscribe 256.5. The shared UI adds a small amount to every route; route-specific caps retain headroom for the larger account and merchant screens.",
-  "default": 255,
+  "//": "First-load JS budgets in kB (gzip), enforced by scripts/check-js-budget.mjs over out/**/index.html. Re-measured after wallet reconnect, reduced-data deferral, full French catalogue, German catalogue, wallet action safeguards, and pagination: / 288.2, /account 306.7, /m 288.0, /mandates 290.0, /merchant 313.2, /plans/* 288.3, /receipt 291.2, /status 283.4, /subscribe 298.8, not-found 280.5. Budgets keep roughly 5-10% headroom.",
+  "default": 290,
   "routes": {
-    "/": 250,
-    "/account": 275,
-    "/m": 250,
-    "/merchant": 285,
-    "/subscribe": 265,
-    "/plans": 250,
-    "/receipt": 260
+    "/": 300,
+    "/account": 320,
+    "/m": 300,
+    "/mandates": 305,
+    "/merchant": 330,
+    "/plans": 300,
+    "/receipt": 305,
+    "/status": 295,
+    "/subscribe": 315
   }
 }

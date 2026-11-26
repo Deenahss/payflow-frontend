@@ -153,7 +153,6 @@ describe("wallet account state", () => {
     await act(async () => {
       await wallet.current.refreshAccount();
     });
-
     expect(readNativeAccount).toHaveBeenCalledTimes(2);
   });
 
