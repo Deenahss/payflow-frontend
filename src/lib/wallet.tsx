@@ -21,6 +21,7 @@ import {
   isSignatureRejection,
   translateSignatureError,
 } from "./signature-error";
+import { detectMissingWallet } from "./wallet-detect";
 import { fundWithFriendbot, readNativeAccount, type NativeAccount } from "./account";
 import {
   clearMerchantSession,
@@ -195,6 +196,9 @@ export interface WalletState {
   connecting: boolean;
   /** True while re-establishing a wallet session after the tab returns to focus. */
   reconnecting?: boolean;
+  rememberedWalletId: string | null;
+  walletSelectionLoaded: boolean;
+  noWallet: boolean;
   /** True while a wallet modal is open or a signature request is in flight. */
   connectingWallet: boolean;
   error: string | null;
@@ -217,7 +221,7 @@ export interface WalletState {
   reconnect: () => Promise<void>;
   disconnect: () => Promise<void>;
   /** Re-establishes the active wallet session without a full reload. */
-  reconnect?: () => Promise<void>;
+  reconnect: () => Promise<void>;
   /** Re-reads the native balance. Safe to call after any transaction. */
   refreshAccount: () => Promise<void>;
   /** Creates and funds the account with Friendbot. Testnet only. */
@@ -266,6 +270,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [walletSelectionLoaded, setWalletSelectionLoaded] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [rememberedWalletId, setRememberedWalletId] = useState<string | null>(null);
+  const [walletSelectionLoaded, setWalletSelectionLoaded] = useState(false);
+  const [noWallet, setNoWallet] = useState(false);
   const [connectingWallet, setConnectingWallet] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reconnectError, setReconnectError] = useState<string | null>(null);
@@ -440,7 +447,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       } catch {
         if (mountedRef.current) setWalletNetwork(null);
       }
-      void refreshAccount();
     } catch (err) {
       if (mountedRef.current) {
         setReconnectError(
@@ -459,19 +465,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setReconnecting(false);
       }
     }
-  }, [applyAccountChange, refreshAccount]);
+  }, [applyAccountChange]);
 
   // Restore only the public wallet choice; reconnecting remains user-initiated.
   useEffect(() => {
     const stored = readStoredSessionRaw();
-    if (!stored) return;
+    if (!stored) {
+      setWalletSelectionLoaded(true);
+      return;
+    }
     const session = parseStoredSession(stored);
     if (!session) {
       removeStoredSessionRaw();
+      setWalletSelectionLoaded(true);
       return;
     }
     const { walletId, address: saved } = session;
+    setRememberedWalletId(walletId);
+    setWalletSelectionLoaded(true);
     activeWalletIdRef.current = walletId;
+    syncingRef.current = true;
     void getKit().then(async (kit) => {
       if (!mountedRef.current) return;
       kit.setWallet(walletId);
@@ -496,6 +509,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         // Wallet may not support getNetwork; treat as no mismatch
         if (mountedRef.current) setWalletNetwork(null);
       }
+    }).finally(() => {
+      syncingRef.current = false;
     });
   }, []);
 
@@ -538,12 +553,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setLocked(false);
     try {
       const kit = await getKit();
+      setNoWallet(await detectMissingWallet(kit));
       await kit.openModal({
         onWalletSelected: async (option) => {
           if (!connectionAttemptRef.current) return;
           try {
             kit.setWallet(option.id);
             activeWalletIdRef.current = option.id;
+            setRememberedWalletId(option.id);
+            setNoWallet(false);
             const { address: selected } = await kit.getAddress();
             addressRef.current = selected;
             setAddress(selected);
@@ -649,6 +667,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     // outlive it. The provider is also unbound by the account effect below.
     clearMerchantSession();
     activeWalletIdRef.current = null;
+    setRememberedWalletId(null);
+    setNoWallet(false);
     addressRef.current = null;
     setAddress(null);
     setWalletNetwork(null);
@@ -797,6 +817,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       walletSelectionLoaded,
       connecting,
       reconnecting,
+      rememberedWalletId,
+      walletSelectionLoaded,
+      noWallet,
       connectingWallet,
       error,
       reconnectError,
@@ -823,6 +846,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       walletSelectionLoaded,
       connecting,
       reconnecting,
+      rememberedWalletId,
+      walletSelectionLoaded,
+      noWallet,
       connectingWallet,
       error,
       reconnectError,

@@ -13,6 +13,7 @@ import { WalletButton } from "@/components/WalletButton";
 import { PersistentWarningBanner } from "@/components/PersistentWarningBanner";
 import { Activity } from "@/components/Activity";
 import { NetworkMismatchBanner, Notice } from "@/components/ui";
+import { PersistentWarningBanner } from "@/components/PersistentWarningBanner";
 import { HeaderSearch } from "@/components/HeaderSearch";
 import {
   APP_VERSION,
@@ -204,13 +205,13 @@ export function WalletLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <>
       <PersistentWarningBanner networkId={network.id} />
-      {address && networkStatus !== "matching" && (
+      {address && (networkMismatch || !walletNetwork) && (
         <div className="mx-auto max-w-5xl px-5 pt-4 print:hidden">
           <NetworkMismatchBanner
             walletNetwork={walletNetwork}
             expectedNetwork={network.networkPassphrase}
             expectedNetworkLabel={network.label}
-            status={networkStatus}
+            status={walletNetwork ? "mismatch" : "unknown"}
           />
         </div>
       )}
@@ -312,9 +313,6 @@ export function WalletLayoutInner({ children }: { children: React.ReactNode }) {
 
           <div className="mt-3 flex justify-end"><LanguagePicker /></div>
 
-          <div className="mt-3 md:hidden">
-            <HeaderSearch onNavigate={(href) => router.push(href)} />
-          </div>
           <nav
             id="mobile-nav"
             ref={menuRef}
@@ -343,9 +341,7 @@ export function WalletLayoutInner({ children }: { children: React.ReactNode }) {
 
         {/* One landmark only: the skip link targets this id. */}
         <main id="main-content" className="flex-1 space-y-8 py-8 print:py-0">
-          <div className="print:hidden">
-            <Activity />
-          </div>
+          <Activity />
           {children}
         </main>
 

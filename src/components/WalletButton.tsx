@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useI18n } from "@/i18n/provider";
 
 import { useWallet } from "@/lib/wallet";
 import { config } from "@/lib/config";
+import { copyToClipboard } from "@/lib/clipboard";
 import { fromStroops, shortAddress, spendableBalance } from "@/lib/format";
 import { copyToClipboard } from "@/lib/clipboard";
 
@@ -14,10 +15,13 @@ import { copyToClipboard } from "@/lib/clipboard";
  */
 export function WalletButton() {
   const { t: tr, translateMessage } = useI18n();
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const {
     address,
     connecting,
     reconnecting = false,
+    rememberedWalletId = null,
+    walletSelectionLoaded = true,
     error,
     reconnectError = null,
     connect,
@@ -29,15 +33,57 @@ export function WalletButton() {
   } = useWallet();
 
   if (!address) {
+    if (!walletSelectionLoaded) {
+      return (
+        <span role="status" aria-live="polite" className="text-xs text-muted">
+          {tr("Checking saved wallet…")}
+        </span>
+      );
+    }
+    if (rememberedWalletId) {
+      return (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {reconnecting && (
+            <span role="status" aria-live="polite" aria-busy="true" className="text-xs text-muted">
+              {tr("Reconnecting…")}
+            </span>
+          )}
+          {!reconnecting && (reconnectError || error) && (
+            <span role="alert" className="text-xs text-danger">
+              {translateMessage(reconnectError ?? error ?? "")}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => void reconnect()}
+            disabled={connecting || reconnecting}
+            aria-busy={connecting || reconnecting || undefined}
+            className="btn-primary"
+          >
+            {connecting || reconnecting ? tr("Reconnecting…") : tr("Reconnect {0}", { "0": rememberedWalletId })}
+          </button>
+          <button
+            type="button"
+            onClick={() => void connect()}
+            disabled={connecting || reconnecting}
+            className="btn-ghost"
+            aria-label={tr("Choose another wallet")}
+          >
+            {tr("Choose another wallet")}
+          </button>
+        </div>
+      );
+    }
     if (!reconnecting && !reconnectError && !error) {
       return (
         <button
           type="button"
           onClick={() => void connect()}
-          disabled={connecting}
+          disabled={connecting || reconnecting}
+          aria-busy={connecting || reconnecting || undefined}
           className="btn-primary"
         >
-          {connecting ? tr("Connecting…") : tr("Connect wallet")}
+          {connecting || reconnecting ? tr("Reconnecting…") : tr("Connect wallet")}
         </button>
       );
     }
@@ -124,30 +170,27 @@ export function WalletButton() {
       )}
       <button
         type="button"
-        onClick={() => void disconnect()}
-        disabled={disconnecting || connecting}
-        className="btn-ghost"
+        onClick={async () => {
+          setCopyState(await copyToClipboard(address) ? "copied" : "error");
+        }}
+        className="btn-ghost mono"
+        title={address}
+        aria-label={tr("Copy connected wallet address")}
       >
-        {disconnecting ? tr("Disconnecting…") : tr("Disconnect")}
+        <span>{shortAddress(address, 5)}</span>
       </button>
-      <span
-        role="status"
-        aria-live="polite"
-        className={
-          copyFeedback === "error"
-            ? "basis-full text-right text-xs text-danger"
-            : "sr-only"
-        }
+      <button
+        type="button"
+        onClick={() => void disconnect()}
+        className="btn-ghost"
+        aria-label={tr("Disconnect")}
       >
-        {copyFeedback === "copied"
-          ? tr("Wallet address copied to clipboard")
-          : copyFeedback === "error"
-            ? tr("Could not copy the wallet address")
-            : ""}
-      </span>
-      {error && (
-        <span role="alert" className="basis-full text-right text-xs text-danger">
-          {tr(error)}
+        {tr("Disconnect")}
+      </button>
+      {copyState !== "idle" && (
+        <span role="status" aria-live="polite" className={copyState === "error" ? "text-xs text-danger" : "text-xs text-muted"}>
+          {copyState === "copied" ? tr("Wallet address copied") : tr("Could not copy the wallet address")}
+          {copyState === "copied" && <span className="sr-only"> {tr("Copied!")}</span>}
         </span>
       )}
       {/* Friendbot is a testnet faucet; off testnet there is nothing to offer. */}
